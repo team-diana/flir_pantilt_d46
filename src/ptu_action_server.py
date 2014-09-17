@@ -23,13 +23,18 @@ class PTUControl(object):
 		self.pstep = rospy.get_param('/ptu/pan_step', 0.00089759763795882463)
 		self.tstep = rospy.get_param('/ptu/tilt_step', 0.00089759763795882463)
 
+		self.pan_joint_name = rospy.get_param('/ptu/pan_joint_name')							
+		self.tilt_joint_name = rospy.get_param('/ptu/tilt_joint_name')							
+
 		# setup the subscribers and publishers
 		rospy.Subscriber('state', JointState, self.cb_ptu_state)
 		self.ptu_pub = rospy.Publisher('cmd', JointState)
 		self.as_goto = actionlib.SimpleActionServer('SetPTUState', \
-		     flir_pantilt_d46.msg.PtuGotoAction, execute_cb=self.cb_goto)
+		     flir_pantilt_d46.msg.PtuGotoAction, execute_cb=self.cb_goto,auto_start=False)
+		self.as_goto.start()
 		self.as_reset  = actionlib.SimpleActionServer('ResetPtu', \
-			 flir_pantilt_d46.msg.PtuResetAction, execute_cb=self.cb_reset)
+			 flir_pantilt_d46.msg.PtuResetAction, execute_cb=self.cb_reset,auto_start=False)
+		self.as_reset.start()
 	
 	def cb_goto(self, msg):
 		pan, tilt, pan_vel, tilt_vel = np.radians((msg.pan, msg.tilt, msg.pan_vel, msg.tilt_vel))
@@ -54,7 +59,7 @@ class PTUControl(object):
 		rospy.loginfo('going to (%s, %s)' % (pan, tilt))
 		msg_out = JointState()
 		msg_out.header.stamp = rospy.Time.now()
-		msg_out.name = ['head_pan_joint', 'head_tilt_joint']
+		msg_out.name = [self.pan_joint_name, self.tilt_joint_name]
 		msg_out.position = [pan, tilt]
 		msg_out.velocity = [pan_vel, tilt_vel]
 		self.ptu_pub.publish(msg_out)

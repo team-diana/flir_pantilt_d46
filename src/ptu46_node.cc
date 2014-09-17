@@ -4,6 +4,7 @@
 #include <sensor_msgs/JointState.h>
 #include <diagnostic_updater/diagnostic_updater.h>
 #include <diagnostic_updater/publisher.h>
+#include <tf/transform_broadcaster.h>
 
 namespace PTU46 {
 
@@ -45,6 +46,10 @@ class PTU46_Node {
         void SetGoal(const sensor_msgs::JointState::ConstPtr& msg);
 
         void produce_diagnostics(diagnostic_updater::DiagnosticStatusWrapper &stat);
+        
+    private:
+        double pan;
+        double tilt;
 
     protected:
         diagnostic_updater::Updater* m_updater;
@@ -52,6 +57,9 @@ class PTU46_Node {
         ros::NodeHandle m_node;
         ros::Publisher  m_joint_pub;
         ros::Subscriber m_joint_sub;
+        std::string m_pan_joint_name;
+        std::string m_tilt_joint_name;
+  
 };
 
 PTU46_Node::PTU46_Node(ros::NodeHandle& node_handle)
@@ -59,6 +67,15 @@ PTU46_Node::PTU46_Node(ros::NodeHandle& node_handle)
     m_updater = new diagnostic_updater::Updater();
     m_updater->setHardwareID("none"); 
     m_updater->add("PTU Status", this, &PTU46_Node::produce_diagnostics);
+
+	// Get the desired joint names
+	m_node.param<std::string>("pan_joint_name", m_pan_joint_name, std::string("pan"));
+	m_node.param<std::string>("tilt_joint_name", m_tilt_joint_name, std::string("tilt"));
+
+	// Set the values to other nodes can get it even if default used
+	m_node.setParam("pan_joint_name", m_pan_joint_name);
+    m_node.setParam("tilt_joint_name", m_tilt_joint_name);
+
 }
 
 PTU46_Node::~PTU46_Node() {
@@ -90,6 +107,8 @@ void PTU46_Node::Connect() {
         return;
     }
     ROS_INFO("Connected!");
+    
+    ROS_INFO("V.alim = %d , Temperature %d degree C",m_pantilt->Valim,m_pantilt->TempC);
 
     m_node.setParam("min_tilt", m_pantilt->GetMin(PTU46_TILT));
     m_node.setParam("max_tilt", m_pantilt->GetMax(PTU46_TILT));
@@ -126,19 +145,42 @@ void PTU46_Node::Disconnect() {
 void PTU46_Node::SetGoal(const sensor_msgs::JointState::ConstPtr& msg) {
     if (! ok())
         return;
-    double pan = msg->position[0];
-    double tilt = msg->position[1];
-    double panspeed = msg->velocity[0];
-    double tiltspeed = msg->velocity[1];
-    m_pantilt->SetPosition(PTU46_PAN, pan);
-    m_pantilt->SetPosition(PTU46_TILT, tilt);
-    m_pantilt->SetSpeed(PTU46_PAN, panspeed);
-    m_pantilt->SetSpeed(PTU46_TILT, tiltspeed);
+	unsigned int i=0;
+	double pan=0;
+	double tilt=0;
+	double panspeed=0;
+	double tiltspeed=0;
+	
+	for (i=0; i< msg->name.size(); i++) {
+	  if (msg->name[i].compare(m_pan_joint_name)==0 ) {
+		pan = msg->position[i];
+		panspeed = msg->velocity[i];
+
+		m_pantilt->SetPosition(PTU46_PAN, pan);
+		m_pantilt->SetSpeed(PTU46_PAN, panspeed);
+		
+	  } else if (msg->name[i].compare(m_tilt_joint_name)==0 ) {
+		tilt = msg->position[i];
+		tiltspeed = msg->velocity[i];
+
+		m_pantilt->SetPosition(PTU46_TILT, tilt);
+		m_pantilt->SetSpeed(PTU46_TILT, tiltspeed);
+		
+	  }  else {
+		ROS_WARN_STREAM("Trying to control the PTU with a bad joint name. Joint=" << msg->name[i]);
+	  }
+	}
+	
 }
 
 void PTU46_Node::produce_diagnostics(diagnostic_updater::DiagnosticStatusWrapper &stat) {
+     m_pantilt->GetInfo();
      stat.summary(diagnostic_msgs::DiagnosticStatus::OK, "All normal.");
      stat.add("PTU Mode", m_pantilt->GetMode()==PTU46_POSITION ? "Position" : "Velocity" );
+     stat.add("V.alim", m_pantilt->Valim );
+     stat.add("temperature", m_pantilt->TempC );
+     stat.add("Pan", pan );
+     stat.add("Tilt", tilt );
 }
 
 
@@ -151,8 +193,8 @@ void PTU46_Node::spinOnce() {
         return;
 
     // Read Position & Speed
-    double pan  = m_pantilt->GetPosition(PTU46_PAN);
-    double tilt = m_pantilt->GetPosition(PTU46_TILT);
+    pan  = m_pantilt->GetPosition(PTU46_PAN);
+    tilt = m_pantilt->GetPosition(PTU46_TILT);
 
     double panspeed  = m_pantilt->GetSpeed(PTU46_PAN);
     double tiltspeed = m_pantilt->GetSpeed(PTU46_TILT);
@@ -163,13 +205,31 @@ void PTU46_Node::spinOnce() {
     joint_state.name.resize(2);
     joint_state.position.resize(2);
     joint_state.velocity.resize(2);
-    joint_state.name[0] ="pan";
+    joint_state.name[0] = m_pan_joint_name;
     joint_state.position[0] = pan;
     joint_state.velocity[0] = panspeed;
-    joint_state.name[1] ="tilt";
+    joint_state.name[1] = m_tilt_joint_name;
     joint_state.position[1] = tilt;
     joint_state.velocity[1] = tiltspeed;
     m_joint_pub.publish(joint_state);
+    
+    // Publish Transform
+//    static tf::TransformBroadcaster br;
+//    tf::Quaternion qx = tf::Quaternion();
+//    qx.setEuler(0.0, tilt, pan); // yaw, pitch, roll
+//    geometry_msgs::Quaternion quaternion = geometry_msgs::Quaternion();
+//
+//    quaternion.w = (double) qx.getW();
+//    quaternion.x = (double) qx.getX();
+//    quaternion.y = (double) qx.getY();
+//    quaternion.z = (double) qx.getZ();
+//
+//    geometry_msgs::TransformStamped trans;
+//    trans.header.stamp = ros::Time::now();
+//    trans.header.frame_id = "ptu_base";
+//    trans.child_frame_id = "ptu_mount";
+//    trans.transform.rotation = quaternion;
+    //br.sendTransform(trans);
 
     m_updater->update();
 

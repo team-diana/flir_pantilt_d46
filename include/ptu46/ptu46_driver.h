@@ -18,6 +18,8 @@
 #define PTU46_MAX_SPEED 'u'
 #define PTU46_VELOCITY 'v'
 #define PTU46_POSITION 'i'
+#define PTU46_RESET 'r'
+#define PTU46_info 'o'
 
 namespace PTU46 {
 
@@ -144,6 +146,12 @@ class PTU46 {
          * \return 'v' for velocity, 'i' for position
          */
         char GetMode ();
+        
+         /** Get Info **/
+        bool GetInfo ();
+        
+        int Valim;
+        int TempC;
 
     private:
         /** Get radian/count resolution
@@ -159,8 +167,6 @@ class PTU46 {
          * \return limiting position/speed
          */
         int GetLimit (char type, char LimType);
-
-
 
         // Position Limits
         int TMin;	///< Min Tilt in Counts

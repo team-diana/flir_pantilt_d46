@@ -214,6 +214,7 @@ PTU46::PTU46(const char * port, int rate) {
             Disconnect();
         }
     }
+    GetInfo();
 }
 
 
@@ -256,6 +257,9 @@ float PTU46::GetRes(char type) {
         return -1;
     char cmd[4] = " r ";
     cmd[0] = type;
+
+    //fprintf(stderr,"%c%c%c%c%c \n",cmd[0],cmd[1],cmd[2],cmd[3],cmd[4]);
+    //fprintf(stderr,"%d \n",z);
 
     // get pan res
     int len = 0;
@@ -335,6 +339,7 @@ bool PTU46::SetPosition (char type, float pos, bool Block) {
     }
 
     char cmd[16];
+    fprintf(stderr,"%d \n",Count);
     snprintf (cmd,16,"%cp%d ",type,Count);
 
     // set pos
@@ -448,6 +453,38 @@ char PTU46::GetMode () {
         return PTU46_POSITION;
     else
         return -1;
+}
+
+// get info
+bool PTU46::GetInfo () {
+    if (fd < 0)
+        return false;
+
+    char cmd[3] = "  ";
+    cmd[0] = PTU46_info;
+
+    // get info
+    int len = 0;
+    Write (cmd);
+    len = read (fd, buffer, PTU46_BUFFER_LEN );
+    
+    char buffer1[4];
+    buffer1[0]=buffer[8];
+    buffer1[1]=buffer[9];
+    buffer1[3]='\0';
+    Valim = atoi (buffer1);
+    
+    char buffer2[4];
+    buffer2[0]=buffer[17];
+    buffer2[1]=buffer[18];
+    buffer2[3]='\0';
+    TempC = ((atoi (buffer2) - 32) * 5) /9;
+
+    if (len <= 0 || buffer[0] != '*') {
+        fprintf (stderr,"Error getting info\n");
+        return false;
+    }
+    return true;
 }
 
 }
